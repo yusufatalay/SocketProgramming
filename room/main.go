@@ -1,7 +1,6 @@
 package main
 
 import (
-	_ "SocketProgramming/room/models"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/joho/godotenv"
+	_ "github.com/yusufatalay/SocketProgramming/room/models"
 )
 
 // to handle concurrent request we need to create a mutex

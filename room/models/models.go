@@ -1,7 +1,7 @@
 package models
 
 import (
-	"SocketProgramming/room/database"
+	"github.com/yusufatalay/SocketProgramming/room/database"
 	"log"
 )
 

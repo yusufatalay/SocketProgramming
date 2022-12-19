@@ -1,8 +1,8 @@
 package models
 
 import (
-	"SocketProgramming/room/database"
 	"errors"
+	"github.com/yusufatalay/SocketProgramming/room/database"
 	"log"
 
 	"gorm.io/gorm"

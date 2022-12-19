@@ -1,9 +1,9 @@
 package models
 
 import (
-	"SocketProgramming/room/database"
 	"errors"
 	"fmt"
+	"github.com/yusufatalay/SocketProgramming/room/database"
 	"log"
 	"strconv"
 	"strings"
