@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/joho/godotenv"
+	"github.com/yusufatalay/SocketProgramming/room/models"
 	_ "github.com/yusufatalay/SocketProgramming/room/models"
 )
 
@@ -60,13 +61,20 @@ func HandleAdd(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 		// GET request has been made, read the query params from the URL
-		io.WriteString(w, "GET request made to /add")
 		roomname := r.URL.Query().Get("name")
 		// return error if roomname has not given
 		if roomname == "" {
 			io.WriteString(w, "name parameter is empty /add?name=<roomname>")
+			return
 		}
-		io.WriteString(w, "roomname is /add "+roomname)
+		r := &models.Room{
+			Name: roomname,
+		}
+		// create the room in database
+		err := models.CreateRoom(r)
+		if err != nil {
+			io.WriteString
+		}
 	case "POST":
 		// POST request has been made, read the request body
 		io.WriteString(w, "POST request made to /add")
