@@ -12,7 +12,6 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/yusufatalay/SocketProgramming/room/models"
-	_ "github.com/yusufatalay/SocketProgramming/room/models"
 )
 
 // to handle concurrent request we need to create a mutex
@@ -67,13 +66,30 @@ func HandleAdd(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, "name parameter is empty /add?name=<roomname>")
 			return
 		}
+		// create a room instance with the given name
 		r := &models.Room{
 			Name: roomname,
 		}
 		// create the room in database
 		err := models.CreateRoom(r)
+
 		if err != nil {
-			io.WriteString
+			if err.Error() == "Room already exists" {
+				w.WriteHeader(http.StatusForbidden)
+			} else {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Header().Set("Content-Type", "application/json")
+				resp := map[string]string{
+					"message": "Database error",
+				}
+				jsonResp, err := json.Marshal(&resp)
+				if err != nil {
+					log.Fatalf("error happenned on json marshall: %s ", err.Error())
+				}
+				w.Write(jsonResp)
+				return
+			}
+			w.Write([]byte(fmt.Sprintf("Room %s successfully added to database", roomname)))
 		}
 	case "POST":
 		// POST request has been made, read the request body

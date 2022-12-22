@@ -33,6 +33,13 @@ func (room *Room) BeforeCreate(tx *gorm.DB) (err error) {
 }
 
 func CreateRoom(room *Room) error {
+
+	// check whether if same room already exists
+	_, ok := database.DBConn.Get(room.Name)
+	if ok {
+		return errors.New("Room already exists")
+	}
+
 	err := database.DBConn.Create(&room).Error
 	if err != nil {
 		log.Printf("Error: %+v", err)
