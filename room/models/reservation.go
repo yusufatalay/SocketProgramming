@@ -2,11 +2,10 @@ package models
 
 import (
 	"errors"
-	"fmt"
-	"github.com/yusufatalay/SocketProgramming/room/database"
 	"log"
 	"strconv"
-	"strings"
+
+	"github.com/yusufatalay/SocketProgramming/room/database"
 
 	"gorm.io/gorm"
 )
@@ -22,42 +21,66 @@ type Reservation struct {
 
 // here are the validation "methods" for these models
 
-func (reservation *Reservation) Validate() (errs []error) {
+func (reservation *Reservation) Validate() error {
+
+	// check if room exists in database
+	var exists bool
+	err := database.DBConn.Model(Room{}).Select("count(*) > 0").Where("name = ?", reservation.RoomName).Find(&exists).Error
+	if err != nil {
+		log.Printf("Error: %+v", err)
+		return err
+	}
+	if !exists {
+		return errors.New("Room does not exists")
+	}
 
 	if reservation.Day < 1 || reservation.Day > 7 {
-		errs = append(errs, errors.New("day value of reservation should be 1 to 7"))
+		return errors.New("day value of reservation should be 1 to 7")
 	}
 
 	if reservation.Hour < 9 || reservation.Hour > 17 {
-		errs = append(errs, errors.New("hour value of reservation should be 9 to 17"))
+		return errors.New("hour value of reservation should be 9 to 17")
+	}
+
+	if reservation.Hour+reservation.Duration > 17 {
+		return errors.New("Invalid reservation time slice")
 	}
 	return nil
 }
 
 // Database methods
 
-func (reservation *Reservation) BeforeCreate(tx *gorm.DB) (err error) {
+func (reservation *Reservation) BeforeCreate(tx *gorm.DB) error {
 
-	errs := reservation.Validate()
-	if len(errs) == 0 {
-		return nil
-	}
-	// concatenate error's strings
-	builder := strings.Builder{}
-	for _, e := range errs {
-		builder.WriteString(e.Error())
-		builder.WriteString(fmt.Sprintf("\n"))
+	// first check for constraints
+	err := reservation.Validate()
+	if err != nil {
+		return err
 	}
 
-	return errors.New(builder.String())
+	// now check if this reservation already made in db
+	hours, err := GetAvailableHours(reservation.RoomName, reservation.Day)
+	if err != nil {
+		return errors.New("Could not get available hours: " + err.Error())
+	}
+	for i := reservation.Hour; i < reservation.Hour+reservation.Duration; i++ {
+		if !contains(hours, i) {
+			return errors.New("Already Reserved")
+		}
+	}
+	return nil
+
 }
+
 func CreateReservation(reservation *Reservation) error {
 	err := database.DBConn.Create(&reservation).Error
 	if err != nil {
 		log.Printf("Error: %+v", err)
 		return err
 	}
+
 	return nil
+
 }
 
 func GetAllReservations() ([]Reservation, error) {
@@ -75,11 +98,20 @@ func GetAllReservations() ([]Reservation, error) {
 // Returns error if room not found , returns empty list if there is no available hours
 func GetAvailableHours(roomname string, day int) ([]string, error) {
 
+	var exists bool
+	err := database.DBConn.Model(Room{}).Select("count(*) > 0").Where("name = ?", roomname).Find(&exists).Error
+	if err != nil {
+		log.Printf("Error: %+v", err)
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.New("Room does not exists")
+	}
 	availableHours := []string{"9", "10", "11", "12", "13", "14", "15", "16", "17"}
 	// get reservations with the given name and day
 	reservations := []Reservation{}
 
-	err := database.DBConn.Where("room_name = ? AND day = ?",
+	err = database.DBConn.Where("room_name = ? AND day = ?",
 		roomname, day).Find(&reservations).Error
 	if err != nil {
 		log.Printf("Error: %+v", err)
@@ -91,7 +123,10 @@ func GetAvailableHours(roomname string, day int) ([]string, error) {
 	// rest is available
 	for _, res := range reservations {
 		hourIndex := getHourIndex(availableHours, strconv.Itoa(res.Hour))
-		availableHours = append(availableHours[:hourIndex], availableHours[hourIndex+res.Duration:]...)
+		if hourIndex == -1 {
+			return nil, errors.New("No available hours for reservation")
+		}
+		availableHours = append(availableHours[:hourIndex], availableHours[hourIndex+res.Duration-1:]...)
 	}
 	return availableHours, nil
 }
@@ -104,4 +139,19 @@ func getHourIndex(hourlist []string, hour string) int {
 		}
 	}
 	return -1
+}
+
+func contains(hours []string, hour int) bool {
+
+	for _, h := range hours {
+		k, err := strconv.Atoi(h)
+		if err != nil {
+			return false
+		}
+
+		if k == hour {
+			return true
+		}
+	}
+	return false
 }

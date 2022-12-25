@@ -2,8 +2,10 @@ package models
 
 import (
 	"errors"
-	"github.com/yusufatalay/SocketProgramming/room/database"
+	"fmt"
 	"log"
+
+	"github.com/yusufatalay/SocketProgramming/room/database"
 
 	"gorm.io/gorm"
 )
@@ -35,12 +37,18 @@ func (room *Room) BeforeCreate(tx *gorm.DB) (err error) {
 func CreateRoom(room *Room) error {
 
 	// check whether if same room already exists
-	_, ok := database.DBConn.Get(room.Name)
-	if ok {
+	var exists bool
+	err := database.DBConn.Model(Room{}).Select("count(*) > 0").Where("name = ?", room.Name).Find(&exists).Error
+	if err != nil {
+		log.Printf("Error: %+v", err)
+		return err
+	}
+	if exists {
+		fmt.Println("in db this exists")
 		return errors.New("Room already exists")
 	}
 
-	err := database.DBConn.Create(&room).Error
+	err = database.DBConn.Create(&room).Error
 	if err != nil {
 		log.Printf("Error: %+v", err)
 		return err
@@ -50,9 +58,19 @@ func CreateRoom(room *Room) error {
 
 // RemoveRoom permanently removes a room.
 // Instead of making soft delete, to lower the complexity.
-func RemoveRoom(name string) error {
+func RemoveRoom(roomname string) error {
 
-	err := database.DBConn.Unscoped().Delete(&Room{}, name).Error
+	var exists bool
+	err := database.DBConn.Model(Room{}).Select("count(*) > 0").Where("name = ?", roomname).Find(&exists).Error
+	if err != nil {
+		log.Printf("Error: %+v", err)
+		return err
+	}
+	if !exists {
+		return errors.New("Room does not exists")
+	}
+
+	err = database.DBConn.Delete(&Room{Name: roomname}).Error
 	if err != nil {
 		log.Printf("Error: %+v", err)
 		return err
