@@ -31,24 +31,26 @@ func (room *Room) BeforeCreate(tx *gorm.DB) (err error) {
 
 	err = room.Validate()
 
-	return
-}
-
-func CreateRoom(room *Room) error {
-
 	// check whether if same room already exists
 	var exists bool
-	err := database.DBConn.Model(Room{}).Select("count(*) > 0").Where("name = ?", room.Name).Find(&exists).Error
+
+	err = database.DBConn.Model(Room{}).Select("count(*) > 0").Where("name = ?", room.Name).Find(&exists).Error
 	if err != nil {
 		log.Printf("Error: %+v", err)
 		return err
 	}
+
 	if exists {
 		fmt.Println("in db this exists")
 		return errors.New("Room already exists")
 	}
 
-	err = database.DBConn.Create(&room).Error
+	return
+}
+
+func CreateRoom(room *Room) error {
+
+	err := database.DBConn.Create(&room).Error
 	if err != nil {
 		log.Printf("Error: %+v", err)
 		return err

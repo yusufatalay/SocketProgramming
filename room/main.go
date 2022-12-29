@@ -10,14 +10,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/joho/godotenv"
 	"github.com/yusufatalay/SocketProgramming/room/models"
 )
-
-// tohandle concurrent request we need to create a mutex
-var mutex sync.Mutex
 
 func main() {
 
