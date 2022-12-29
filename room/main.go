@@ -66,7 +66,6 @@ func handleConnection(conn net.Conn) {
 	reqParts := strings.Split(reqStr, "\n")
 	url := strings.TrimSpace(strings.Split(reqParts[0], " ")[1])
 
-	fmt.Println("URL: " + url)
 	// use appropriate handler for the url
 	if strings.HasPrefix(url, "/health") {
 		health(&conn)
@@ -92,7 +91,7 @@ func health(conn *net.Conn) {
 	response := "HTTP/1.1 200 OK\n"
 	response += "Content-Type: text/plain\n"
 	response += "\n"
-	response += "Room Server Is healty at port -> " + os.Getenv("ROOMSERVERPORT")
+	response += "Room Server is healty at port -> " + os.Getenv("ROOMSERVERPORT")
 	response += "\n"
 	_, err := (*conn).Write([]byte(response))
 	if err != nil {

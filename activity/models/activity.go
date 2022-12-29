@@ -30,8 +30,8 @@ func (activity *Activity) BeforeCreate(tx *gorm.DB) (err error) {
 		log.Printf("Error %+v", err)
 		return err
 	}
-	if !exists {
-		return errors.New("Activity does not exists")
+	if exists {
+		return errors.New("Activity already exists")
 	}
 	return nil
 
@@ -43,4 +43,37 @@ func CreateActivity(activity *Activity) error {
 		return err
 	}
 	return nil
+}
+
+func RemoveActivity(name string) error {
+
+	var exists bool
+	err := database.DBConn.Model(Activity{}).Select("count(*) > 0").Where("name = ?", name).Find(&exists).Error
+	if err != nil {
+		log.Printf("Error: %+v", err)
+		return err
+	}
+	if !exists {
+		return errors.New("activity does not exists")
+	}
+
+	err = database.DBConn.Delete(&Activity{Name: name}).Error
+	if err != nil {
+		log.Printf("Error: %+v", err)
+		return err
+	}
+	return nil
+
+}
+
+func CheckActivity(name string) (bool, error) {
+
+	var exists bool
+	err := database.DBConn.Model(Activity{}).Select("count(*) > 0").Where("name = ?", name).Find(&exists).Error
+	if err != nil {
+		log.Printf("Error: %+v", err)
+		return false, err
+	}
+
+	return exists, nil
 }
