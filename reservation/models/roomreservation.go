@@ -15,14 +15,15 @@ type RoomReservation struct {
 	Duration     int    `json:"duration"`
 }
 
-func CreateRoomReservation(roomreservation *RoomReservation) error {
+func CreateRoomReservation(roomreservation *RoomReservation) (uint, error) {
 	err := database.DBConn.Create(&roomreservation).Error
 	if err != nil {
 		log.Printf("Error: %+v", err)
-		return err
+
+		return 0, err
 	}
 
-	return nil
+	return roomreservation.ID, nil
 
 }
 
@@ -31,7 +32,9 @@ func GetReservationByID(id uint) (*RoomReservation, error) {
 	err := database.DBConn.Find(&reservation, id).Error
 	if err != nil {
 		log.Printf("Error: %+v", err)
+
 		return nil, err
 	}
+
 	return &reservation, nil
 }

@@ -32,7 +32,7 @@ func main() {
 	}, "../.env")
 
 	// create a tcp socket that listens localhost:PORT
-	ln, err := net.Listen("tcp", "localhost:"+os.Getenv("ROOMSERVERPORT"))
+	ln, err := net.Listen("tcp", "127.0.0.1:"+os.Getenv("ROOMSERVERPORT"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func handleConnection(conn net.Conn) {
 
 }
 
-// health is for letting the controller server to know that this server is active
+// health is for letting the controller server to know that this server is active.
 func health(conn *net.Conn) {
 	// just return 200 OK to let the caller know this server is active
 
@@ -101,7 +101,7 @@ func health(conn *net.Conn) {
 	(*conn).Close()
 }
 
-// HandleAdd will be triggerred when localhost/add has been visited
+// HandleAdd will be triggerred when localhost/add has been visited.
 func HandleAdd(conn *net.Conn, req string) {
 
 	reqParts := strings.Split(req, "\n")
@@ -429,7 +429,7 @@ func HandleReserve(conn *net.Conn, req string) {
 		})
 		if err != nil {
 			if err.Error() == "Room does not exists" {
-				response += "HTTP/1.1 400 Bad Request\n"
+				response += "HTTP/1.1 404 Not Found\n"
 				response += "Content-Type: text/plain\n"
 				response += "\n"
 				response += "Room does not exists"
@@ -454,10 +454,10 @@ func HandleReserve(conn *net.Conn, req string) {
 			}
 		}
 
-		response += "HTTP/1.1 200 Bad Request\n"
+		response += "HTTP/1.1 200 OK\n"
 		response += "Content-Type: text/plain\n"
 		response += "\n"
-		response += "Reservation created succesfully"
+		response += "Reservation created successfully"
 		response += "\n"
 		return
 
@@ -512,7 +512,7 @@ func HandleReserve(conn *net.Conn, req string) {
 		response += "HTTP/1.1 200 Bad Request\n"
 		response += "Content-Type: text/plain\n"
 		response += "\n"
-		response += "Reservation created succesfully"
+		response += "Reservation created successfully"
 		response += "\n"
 		return
 

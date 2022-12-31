@@ -1,8 +1,9 @@
 package models
 
 import (
-	"github.com/yusufatalay/SocketProgramming/reservation/database"
 	"log"
+
+	"github.com/yusufatalay/SocketProgramming/reservation/database"
 )
 
 func init() {
