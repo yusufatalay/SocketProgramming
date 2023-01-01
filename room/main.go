@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
+	"github.com/yusufatalay/SocketProgramming/room/helper"
 	"github.com/yusufatalay/SocketProgramming/room/models"
 )
 
@@ -28,11 +29,12 @@ func main() {
 
 	// insert this server's port number to config file
 	godotenv.Write(map[string]string{
-		"ROOMSERVERPORT": os.Args[1],
+		"ROOMSERVERPORT":     os.Args[1],
+		"ACTIVITYSERVERPORT": os.Getenv("ACTIVITYSERVERPORT"),
 	}, "../.env")
 
 	// create a tcp socket that listens localhost:PORT
-	ln, err := net.Listen("tcp", "127.0.0.1:"+os.Getenv("ROOMSERVERPORT"))
+	ln, err := net.Listen("tcp", "localhost:"+os.Getenv("ROOMSERVERPORT"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -88,11 +90,11 @@ func handleConnection(conn net.Conn) {
 func health(conn *net.Conn) {
 	// just return 200 OK to let the caller know this server is active
 
-	response := "HTTP/1.1 200 OK\n"
-	response += "Content-Type: text/plain\n"
-	response += "\n"
+	response := "HTTP/1.0 200 OK\r\n"
+	response += "Content-Type: text/plain\r\n"
+	response += "\r\n"
 	response += "Room Server is healty at port -> " + os.Getenv("ROOMSERVERPORT")
-	response += "\n"
+	response += "\r\n"
 	_, err := (*conn).Write([]byte(response))
 	if err != nil {
 		log.Fatal(err)
@@ -116,20 +118,16 @@ func HandleAdd(conn *net.Conn, req string) {
 	}()
 	switch method {
 	case "GET":
-		fmt.Println("GET request made to /add")
 		url := strings.TrimSpace(strings.Split(reqParts[0], " ")[1])
 		// GET request has been made, read the query params from the URL
 		// url will be in the format of .../add?name=roomname so splitting according to the equal sign makes sense
 
 		roomname := strings.Split(url, "=")[1]
-		log.Println("roomname " + roomname)
 		// return error if roomname has not given
 		if roomname == "" {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "name parameter is empty /add?name=<roomname>"
-			response += "\n"
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Empty Parameter", "name parameter is empty")
+
 			return
 		}
 		// create a room instance with the given name
@@ -141,81 +139,61 @@ func HandleAdd(conn *net.Conn, req string) {
 
 		if err != nil {
 			if err.Error() == "Room already exists" {
-				response += "HTTP/1.1 403 Forbidden\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Room already exists"
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 403, "Forbidden",
+					"Room already exists", "There is already a room exists with the same name")
+
 				return
 			} else {
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Database Error:\t" + err.Error()
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+					"Database Error", err.Error())
+
 				return
 			}
 
 		}
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += fmt.Sprintf("Room %s successfully added to database", roomname)
-		response += "\n"
+		response = helper.CreateHTTPResponse("Room", 200, "OK",
+			"Succesfull", fmt.Sprintf("Room %s successfully added to database", roomname))
+
 		return
 
 	case "POST":
-		fmt.Println("POST request made to /add")
 		reqBody := strings.Split(req, "{")[1]
 		reqBody = "{" + reqBody
-		fmt.Println(reqBody)
-		fmt.Println(string([]byte(reqBody)))
 		reqBodyByte := bytes.Trim([]byte(reqBody), "\x00")
 		// POST request has been made, read the request body
 		// unmarshall the json body to a struct
 		var body models.Room
 		err := json.Unmarshal(reqBodyByte, &body)
 		if err != nil {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "Parser Error:\t" + err.Error()
-			response += "\n"
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", err.Error())
+
 			return
 		}
-		fmt.Printf("room object  %+v", body)
 		err = models.CreateRoom(&body)
 		if err != nil {
 			if err.Error() == "Room already exists" {
-				response += "HTTP/1.1 403 Forbidden\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Room already exists"
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 403, "Forbidden",
+					"Room already exists", "There is already a room exists with the same name")
+
 				return
 			} else {
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Database Error:\t" + err.Error()
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+					"Database Error", err.Error())
+
 				return
 			}
 
 		}
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += fmt.Sprintf("Room %s successfully added to database", body.Name)
-		response += "\n"
+		response = helper.CreateHTTPResponse("Room", 200, "OK",
+			"Succesfull", fmt.Sprintf("Room %s successfully added to database", body.Name))
+
 		return
 	default:
 		// unknown http method has been used, throw error
-		response += "HTTP/1.1 400 Bad Request\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += "Method not supported"
-		response += "\n"
+		response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+			"Method not supported", "Method not supported")
+
 		return
 	}
 
@@ -239,94 +217,72 @@ func HandleRemove(conn *net.Conn, req string) {
 	case "GET":
 
 		roomname := strings.Split(url, "=")[1]
-		log.Println("roomname " + roomname)
 		// return error if roomname has not given
 		if roomname == "" {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "name parameter is empty /remove?name=<roomname>"
-			response += "\n"
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Empty Parameter", "name parameter is empty")
+
 			return
 		}
 
 		err := models.RemoveRoom(roomname)
 		if err != nil {
 			if err.Error() == "Room does not exists" {
-				response += "HTTP/1.1 403 Forbidden\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Room does not exists"
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 403, "Forbidden",
+					"Room does not exists", "There is no room exists with the given name")
+
 				return
 			} else {
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Database Error:\t" + err.Error()
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+					"Database Error", err.Error())
+
 				return
 			}
 
 		}
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += fmt.Sprintf("Room %s successfully removed from database", roomname)
-		response += "\n"
+		response = helper.CreateHTTPResponse("Room", 200, "OK",
+			"Succesfull", fmt.Sprintf("Room %s successfully removed from database", roomname))
+
 		return
 
 	case "POST":
 		// POST request has been made, read the request body
 		reqBody := strings.Split(req, "{")[1]
 		reqBody = "{" + reqBody
-		fmt.Println(reqBody)
-		fmt.Println(string([]byte(reqBody)))
 		reqBodyByte := bytes.Trim([]byte(reqBody), "\x00") //		// unmarshall the json body to a struct
 
 		var body models.Room
 		err := json.Unmarshal(reqBodyByte, &body)
 		if err != nil {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "Parser Error:\t" + err.Error()
-			response += "\n"
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", err.Error())
+
 			return
 		}
-		fmt.Printf("room object  %+v", body)
 		err = models.RemoveRoom(body.Name)
 		if err != nil {
 			if err.Error() == "Room does not exists" {
-				response += "HTTP/1.1 403 Forbidden\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Room does not exists"
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 403, "Forbidden",
+					"Room does not exists", "There is no room exists with the given name")
+
 				return
 			} else {
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Database Error:\t" + err.Error()
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+					"Database Error", err.Error())
+
 				return
 			}
 
 		}
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += fmt.Sprintf("Room %s successfully removed from database", body.Name)
-		response += "\n"
+		response = helper.CreateHTTPResponse("Room", 200, "OK",
+			"Succesfull", fmt.Sprintf("Room %s successfully removed from database", body.Name))
+
 		return
 	default:
 		// unknown http method has been used, throw error
-		response += "HTTP/1.1 400 Bad Request\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += "Method not supported"
-		response += "\n"
+		response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+			"Method not supported", "Method not supported")
+
 		return
 	}
 }
@@ -356,69 +312,46 @@ func HandleReserve(conn *net.Conn, req string) {
 		}
 		// return error if roomname has not given
 		if _, ok := paramsMap["name"]; !ok {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Empty Parameter", "name parameter is empty")
 
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "name parameter is empty"
-			response += "\n"
 			return
 		} else if _, ok := paramsMap["day"]; !ok {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Empty Parameter", "day parameter is empty")
 
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "day parameter is empty"
-			response += "\n"
 			return
 		} else if _, ok := paramsMap["hour"]; !ok {
-
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "hour parameter is empty"
-			response += "\n"
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Empty Parameter", "hour parameter is empty")
 			return
 		} else if _, ok := paramsMap["duration"]; !ok {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Empty Parameter", "duration parameter is empty")
 
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "duration parameter is empty"
-			response += "\n"
 			return
 		}
 
 		dayint, err := strconv.Atoi(paramsMap["day"])
 		if err != nil {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", "day value should be a number")
 
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "day value should be a number"
-			response += "\n"
 			return
 		}
 		hourint, err := strconv.Atoi(paramsMap["hour"])
-
 		if err != nil {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", "hour value should be a number")
 
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "hour value should be a number"
-			response += "\n"
 			return
 		}
+
 		durationint, err := strconv.Atoi(paramsMap["duration"])
-
 		if err != nil {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", "duration value should be a number")
 
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "duration value should be a number"
-			response += "\n"
 			return
 		}
 		err = models.CreateReservation(&models.Reservation{
@@ -429,36 +362,26 @@ func HandleReserve(conn *net.Conn, req string) {
 		})
 		if err != nil {
 			if err.Error() == "Room does not exists" {
-				response += "HTTP/1.1 404 Not Found\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Room does not exists"
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 403, "Forbidden",
+					"Room does not exists", "There is no room exists with the given name")
+
 				return
 			} else if err.Error() == "Already Reserved" {
+				response = helper.CreateHTTPResponse("Room", 403, "Forbidden",
+					"Room already reserved", "Room already reserved in given time slice")
 
-				response += "HTTP/1.1 403 Forbidden\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Room already reserved in given time slice"
-				response += "\n"
 				return
 			} else {
+				response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+					"Database Error", err.Error())
 
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Database error: " + err.Error()
-				response += "\n"
 				return
 			}
 		}
 
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += "Reservation created successfully"
-		response += "\n"
+		response = helper.CreateHTTPResponse("Room", 200, "OK",
+			"Succesfull", "Reservation created successfully")
+
 		return
 
 	case "POST":
@@ -466,63 +389,47 @@ func HandleReserve(conn *net.Conn, req string) {
 
 		reqBody := strings.Split(req, "{")[1]
 		reqBody = "{" + reqBody
-		fmt.Println(reqBody)
-		fmt.Println(string([]byte(reqBody)))
 		reqBodyByte := bytes.Trim([]byte(reqBody), "\x00") //		// unmarshall the json body to a struct
 		var body models.Reservation
 
 		err := json.Unmarshal(reqBodyByte, &body)
 		if err != nil {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "Parser Error:\t" + err.Error()
-			response += "\n"
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", err.Error())
+
 			return
 		}
 
 		err = models.CreateReservation(&body)
 		if err != nil {
 			if err.Error() == "Room does not exists" {
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Room does not exists"
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+					"Room does not exists", "There is no room exists with the given name")
+
 				return
 			} else if err.Error() == "Already Reserved" {
+				response = helper.CreateHTTPResponse("Room", 403, "Forbidden",
+					"Room already reserved", "Room already reserved in given time slice")
 
-				response += "HTTP/1.1 403 Forbidden\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Room already reserved in given time slice"
-				response += "\n"
 				return
 			} else {
+				response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+					"Database Error", err.Error())
 
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Database error: " + err.Error()
-				response += "\n"
 				return
 			}
 		}
 
-		response += "HTTP/1.1 200 Bad Request\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += "Reservation created successfully"
-		response += "\n"
+		response = helper.CreateHTTPResponse("Room", 200, "OK",
+			"Succesfull", "Reservation created successfully")
+
 		return
 
 	default:
 		// unknown http method has been used, throw error
-		response += "HTTP/1.1 400 Bad Request\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += "Method not supported"
-		response += "\n"
+		response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+			"Method not supported", "Method not supported")
+
 		return
 	}
 
@@ -557,49 +464,34 @@ func HandleCheckAvailability(conn *net.Conn, req string) {
 		}
 		// return error if roomname has not given
 		if _, ok := paramsMap["name"]; !ok {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", "name parameter is empty")
 
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "name parameter is empty"
-			response += "\n"
 			return
 		} else if _, ok := paramsMap["day"]; !ok {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", "day parameter is empty")
 
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "day parameter is empty"
-			response += "\n"
 			return
 		}
 		dayint, err := strconv.Atoi(paramsMap["day"])
 		if err != nil {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", "day value should be a number")
 
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "day value should be a number"
-			response += "\n"
 			return
 		}
 		hours, err := models.GetAvailableHours(paramsMap["name"], dayint)
 
 		if err != nil {
 			if err.Error() == "Room does not exists" {
-				response += "HTTP/1.1 404 Not Found\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Room does not exists"
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 404, "Not Found",
+					"Room does not exists", "Room does not exists")
 
 				return
 			} else {
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Validation error: " + err.Error()
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+					"Validation Error", err.Error())
 
 				return
 			}
@@ -611,14 +503,10 @@ func HandleCheckAvailability(conn *net.Conn, req string) {
 		}
 		hoursStr.WriteRune('\n')
 
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += "Available hours for room " + paramsMap["name"] + " for day " +
-			paramsMap["day"] + " is listed below"
-		response += "\n"
-		response += hoursStr.String()
-		response += "\n"
+		response = helper.CreateHTTPResponse("Room", 200, "OK",
+			fmt.Sprintf("Available hours for room %s for day %s is listed below",
+				paramsMap["name"], paramsMap["day"]), hoursStr.String())
+
 		return
 
 	case "POST":
@@ -626,8 +514,6 @@ func HandleCheckAvailability(conn *net.Conn, req string) {
 
 		reqBody := strings.Split(req, "{")[1]
 		reqBody = "{" + reqBody
-		fmt.Println(reqBody)
-		fmt.Println(string([]byte(reqBody)))
 		reqBodyByte := bytes.Trim([]byte(reqBody), "\x00") //		// unmarshall the json body to a struct
 		var body struct {
 			Name string `json:"room_name"`
@@ -636,11 +522,9 @@ func HandleCheckAvailability(conn *net.Conn, req string) {
 
 		err := json.Unmarshal(reqBodyByte, &body)
 		if err != nil {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "Parser Error:\t" + err.Error()
-			response += "\n"
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", err.Error())
+
 			return
 		}
 
@@ -648,19 +532,13 @@ func HandleCheckAvailability(conn *net.Conn, req string) {
 
 		if err != nil {
 			if err.Error() == "Room does not exists" {
-				response += "HTTP/1.1 404 Not Found\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Room does not exists"
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 404, "Not Found",
+					"Room does not exists", "Room does not exists")
 
 				return
 			} else {
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Validation error: " + err.Error()
-				response += "\n"
+				response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+					"Validation Error", err.Error())
 
 				return
 			}
@@ -672,23 +550,17 @@ func HandleCheckAvailability(conn *net.Conn, req string) {
 		}
 		hoursStr.WriteRune('\n')
 
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += "Available hours for room " + body.Name + " for day " +
-			strconv.Itoa(body.Day) + " is listed below"
-		response += "\n"
-		response += hoursStr.String()
-		response += "\n"
+		response = helper.CreateHTTPResponse("Room", 200, "OK",
+			fmt.Sprintf("Available hours for room %s for day %d is listed below",
+				body.Name, body.Day), hoursStr.String())
+
 		return
 
 	default:
 		// unknown http method has been used, throw error
-		response += "HTTP/1.1 400 Bad Request\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += "Method not supported"
-		response += "\n"
+		response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+			"Method not supported", "Method not supported")
+
 		return
 	}
 }

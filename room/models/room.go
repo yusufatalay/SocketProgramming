@@ -2,7 +2,6 @@ package models
 
 import (
 	"errors"
-	"fmt"
 	"log"
 
 	"github.com/yusufatalay/SocketProgramming/room/database"
@@ -41,7 +40,6 @@ func (room *Room) BeforeCreate(tx *gorm.DB) (err error) {
 	}
 
 	if exists {
-		fmt.Println("in db this exists")
 		return errors.New("Room already exists")
 	}
 

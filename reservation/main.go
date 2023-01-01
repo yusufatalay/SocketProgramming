@@ -12,11 +12,12 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
+	"github.com/yusufatalay/SocketProgramming/reservation/helper"
 	"github.com/yusufatalay/SocketProgramming/reservation/models"
 )
 
-var RoomServerConn net.Conn
-var ActivityServerConn net.Conn
+var ROOMSERVERPORT string
+var ACTIVITYSERVERPORT string
 
 func main() {
 
@@ -26,17 +27,17 @@ func main() {
 		log.Fatalf("cannot found project's dotenv file: %v\n", err)
 	}
 
-	var ROOMSERVERPORT = os.Getenv("ROOMSERVERPORT")
-	var ACTIVITYSERVERPORT = os.Getenv("ACTIVITYSERVERPORT")
+	ROOMSERVERPORT = os.Getenv("ROOMSERVERPORT")
+	ACTIVITYSERVERPORT = os.Getenv("ACTIVITYSERVERPORT")
 
 	// check if room server is active using health endpoint using the socket connection
 	// if not, exit the program
-	RoomServerConn, err = net.Dial("tcp", "localhost:"+ROOMSERVERPORT)
+	RoomServerConn, err := net.Dial("tcp", "localhost:"+ROOMSERVERPORT)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Cannor connect to Room Server %s", err.Error())
 	}
-	defer RoomServerConn.Close()
-	_, err = RoomServerConn.Write([]byte("GET /health HTTP/1.1"))
+
+	_, err = RoomServerConn.Write([]byte("GET /health HTTP/1.0"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -50,14 +51,14 @@ func main() {
 
 		return
 	}
+	RoomServerConn.Close()
 	// check if activity server is active using health endpoint using the socket connection
 	// if not, exit the program
-	ActivityServerConn, err = net.Dial("tcp", "localhost:"+ACTIVITYSERVERPORT)
+	ActivityServerConn, err := net.Dial("tcp", "localhost:"+ACTIVITYSERVERPORT)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Cannot connect Activity Server %s", err.Error())
 	}
-	defer ActivityServerConn.Close()
-	_, err = ActivityServerConn.Write([]byte("GET /health HTTP/1.1"))
+	_, err = ActivityServerConn.Write([]byte("GET /health HTTP/1.0"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -73,22 +74,15 @@ func main() {
 
 		return
 	}
+	ActivityServerConn.Close()
 
 	if len(os.Args) != 2 {
 		// nolint
 		panic(errors.New("Should only provide a port number."))
 	}
 
-	// insert this server's port number to config file
-	err = godotenv.Write(map[string]string{
-		"RESERVATIONSERVERPORT": os.Args[1],
-	}, "../.env")
-	if err != nil {
-		log.Fatalf("cannot write to project's dotenv file: %v\n", err)
-	}
-
 	// create a tcp socket that listens localhost:PORT
-	ln, err := net.Listen("tcp", "localhost:"+os.Getenv("RESERVATIONSERVERPORT"))
+	ln, err := net.Listen("tcp", "localhost:"+os.Args[1])
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -138,6 +132,16 @@ func handleConnection(conn net.Conn) {
 }
 
 func HandleReserve(conn *net.Conn, req string) {
+	ActivityServerConn, err := net.Dial("tcp", "localhost:"+ACTIVITYSERVERPORT)
+	if err != nil {
+		log.Fatalf("Cannot Connect Activity Server %s", err.Error())
+	}
+
+	RoomServerConn, err := net.Dial("tcp", "localhost:"+ROOMSERVERPORT)
+	if err != nil {
+		log.Fatalf("Cannot Connect Room Server %s", err.Error())
+	}
+
 	reqParts := strings.Split(req, "\n")
 	method := strings.TrimSpace(strings.Split(reqParts[0], " ")[0])
 	url := strings.TrimSpace(strings.Split(reqParts[0], " ")[1])
@@ -147,6 +151,8 @@ func HandleReserve(conn *net.Conn, req string) {
 		if err != nil {
 			log.Fatal(err)
 		}
+		ActivityServerConn.Close()
+		RoomServerConn.Close()
 		(*conn).Close()
 	}()
 	switch method {
@@ -160,27 +166,33 @@ func HandleReserve(conn *net.Conn, req string) {
 			paramsMap[temp[0]] = temp[1]
 		}
 		// check activity server if the activity exists make a socket request
-		_, err := ActivityServerConn.Write([]byte(fmt.Sprintf("GET /check?name=" + paramsMap["activity"] + " HTTP/1.1")))
+		req := helper.CreateHTTPRequest(fmt.Sprintf("/check?name=%s", paramsMap["activity"]))
+		_, err := ActivityServerConn.Write([]byte(req))
 		if err != nil {
 			log.Fatal(err)
 		}
 		buf := make([]byte, 1024)
 		_, err = ActivityServerConn.Read(buf)
 		if err != nil {
-			log.Fatal(err)
+			if err.Error() != "EOF" {
+				log.Fatal(err)
+			}
 		}
 		if !strings.Contains(string(buf), "200 OK") {
-			response += "HTTP/1.1 404 Not Found\n"
-			response += "Content-Type: text/plain\n"
-			response += "Activity not found.\n"
+			response = helper.CreateHTTPResponse("Reservation", 404, "Not Found",
+				"Database error.", "Activity not found.")
 
 			return
 		}
 		// check room server if the input is valid
-		_, err = RoomServerConn.Write([]byte(fmt.Sprintf("GET /reserve?name=%s&day=%s&hour=%s&duration=%s HTTP/1.1",
-			paramsMap["room"], paramsMap["day"], paramsMap["hour"], paramsMap["duration"])))
+		req = helper.CreateHTTPRequest(fmt.Sprintf("/reserve?name=%s&day=%s&hour=%s&duration=%s",
+			paramsMap["room"], paramsMap["day"], paramsMap["hour"], paramsMap["duration"]))
+
+		_, err = RoomServerConn.Write([]byte(req))
 		if err != nil {
-			log.Fatal(err)
+			if err.Error() != "EOF" {
+				log.Fatal(err)
+			}
 		}
 		buf = make([]byte, 1024)
 		_, err = RoomServerConn.Read(buf)
@@ -188,20 +200,23 @@ func HandleReserve(conn *net.Conn, req string) {
 			log.Fatal(err)
 		}
 		if strings.Contains(string(buf), "400 Bad Request") {
-			response = string(buf)
+			response = helper.CreateHTTPResponse("Reservation", 400, "Bad Request",
+				"Database error.", "Invalid input.")
+
 			return
 		}
 
 		if strings.Contains(string(buf), "404 Not Found") {
-			response += "HTTP/1.1 404 Not Found\n"
-			response += "Content-Type: text/plain\n"
-			response += "Room not found.\n"
+			response = helper.CreateHTTPResponse("Reservation", 404, "Not Found",
+				"Database error.", "Room not found.")
 
 			return
 		}
 
 		if strings.Contains(string(buf), "403 Forbidden") {
-			response = string(buf)
+			response = helper.CreateHTTPResponse("Reservation", 403, "Forbidden",
+				"Database error.", "Room not available.")
+
 			return
 		}
 		if strings.Contains(string(buf), "200 OK") {
@@ -221,16 +236,9 @@ func HandleReserve(conn *net.Conn, req string) {
 				log.Fatal(err)
 			}
 
-			response += "HTTP/1.1 200 OK\n"
-			response += "Content-Type: text/plain\n"
-			response += "Reservation successful.\n"
-			response += "Reservation Details:\n"
-			response += fmt.Sprintf("Reservation ID: %d\n", resID)
-			response += "Room: " + paramsMap["room"] + "\n"
-			response += "Activity: " + paramsMap["activity"] + "\n"
-			response += "Day: " + paramsMap["day"] + "\n"
-			response += "Hour: " + paramsMap["hour"] + "\n"
-			response += "Duration: " + paramsMap["duration"] + "\n"
+			response = helper.CreateHTTPResponse("Reservation", 200, "OK",
+				"Reservation successful.", fmt.Sprintf("Reservation Details:\r\nReservation ID: %d\r\nRoom: %s\r\nActivity: %s\r\nDay: %d\r\nHour: %d\r\nDuration: %d\r\n\r\n",
+					resID, paramsMap["room"], paramsMap["activity"], dayint, hourint, durationint))
 
 			return
 		}
@@ -239,19 +247,80 @@ func HandleReserve(conn *net.Conn, req string) {
 
 		reqBody := strings.Split(req, "{")[1]
 		reqBody = "{" + reqBody
-		fmt.Println(reqBody)
-		fmt.Println(string([]byte(reqBody)))
-		reqBodyByte := bytes.Trim([]byte(reqBody), "\x00") //		// unmarshall the json body to a struct
+		reqBodyByte := bytes.Trim([]byte(reqBody), "\x00") //       // unmarshall the json body to a struct
 		var body models.RoomReservation
 
 		err := json.Unmarshal(reqBodyByte, &body)
 		if err != nil {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
+			response = helper.CreateHTTPResponse("Reservation", 400, "Bad Request",
+				"Parser error.", err.Error())
 
-			response += "\n"
-			response += "Parser Error:\t" + err.Error()
-			response += "\n"
+			return
+		}
+		// check activity server if the activity exists make a socket request
+		req = helper.CreateHTTPRequest(fmt.Sprintf("/check?name=%s", body.ActivityName))
+		_, err = ActivityServerConn.Write([]byte(req))
+		if err != nil {
+			log.Fatal(err)
+		}
+		buf := make([]byte, 1024)
+		_, err = ActivityServerConn.Read(buf)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if !strings.Contains(string(buf), "200 OK") {
+			response = helper.CreateHTTPResponse("Reservation", 404, "Not Found",
+				"Database error.", "Activity not found.")
+
+			return
+		}
+
+		// check room server if the input is valid
+		req = helper.CreateHTTPRequest(fmt.Sprintf("/check?name=%s&day=%d&hour=%d&duration=%d",
+			body.RoomName, body.Day, body.Hour, body.Duration))
+		_, err = RoomServerConn.Write([]byte(req))
+		if err != nil {
+			log.Fatal(err)
+		}
+		buf = make([]byte, 1024)
+		_, err = RoomServerConn.Read(buf)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if strings.Contains(string(buf), "400 Bad Request") {
+			response = helper.CreateHTTPResponse("Reservation", 400, "Bad Request",
+				"Parser error.", "Invalid input.")
+			return
+		}
+		if strings.Contains(string(buf), "404 Not Found") {
+			response = helper.CreateHTTPResponse("Reservation", 404, "Not Found",
+				"Database error.", "Room not found.")
+
+			return
+		}
+
+		if strings.Contains(string(buf), "403 Forbidden") {
+			response = helper.CreateHTTPResponse("Reservation", 403, "Forbidden",
+				"Database error.", "Room is already reserved.")
+			return
+		}
+
+		if strings.Contains(string(buf), "200 OK") {
+			// successful now create local reservation
+			resID, err := models.CreateRoomReservation(&models.RoomReservation{
+				RoomName:     body.RoomName,
+				ActivityName: body.ActivityName,
+				Day:          body.Day,
+				Hour:         body.Hour,
+				Duration:     body.Duration,
+			})
+
+			if err != nil {
+				log.Fatal(err)
+			}
+			response = helper.CreateHTTPResponse("Reservation", 200, "OK",
+				"Reservation successful.", fmt.Sprintf("Reservation Details:\r\nReservation ID: %d\r\nRoom: %s\r\nActivity: %s\r\nDay: %d\r\nHour: %d\r\nDuration: %d\r\n\r\n",
+					resID, body.RoomName, body.ActivityName, body.Day, body.Hour, body.Duration))
 
 			return
 		}
@@ -259,7 +328,7 @@ func HandleReserve(conn *net.Conn, req string) {
 }
 
 func HandleListAvailability(conn *net.Conn, req string) {
-	panic("unimplemented")
+	return
 }
 
 func HandleDisplay(conn *net.Conn, req string) {

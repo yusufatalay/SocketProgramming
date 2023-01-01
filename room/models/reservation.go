@@ -6,8 +6,6 @@ import (
 	"strconv"
 
 	"github.com/yusufatalay/SocketProgramming/room/database"
-
-	"gorm.io/gorm"
 )
 
 // I have use an external packet just for validating the structs (will acts as table entries)
@@ -50,8 +48,7 @@ func (reservation *Reservation) Validate() error {
 
 // Database methods
 
-func (reservation *Reservation) BeforeCreate(tx *gorm.DB) error {
-
+func CreateReservation(reservation *Reservation) error {
 	// first check for constraints
 	err := reservation.Validate()
 	if err != nil {
@@ -68,12 +65,8 @@ func (reservation *Reservation) BeforeCreate(tx *gorm.DB) error {
 			return errors.New("Already Reserved")
 		}
 	}
-	return nil
 
-}
-
-func CreateReservation(reservation *Reservation) error {
-	err := database.DBConn.Create(&reservation).Error
+	err = database.DBConn.Create(&reservation).Error
 	if err != nil {
 		log.Printf("Error: %+v", err)
 		return err
@@ -97,7 +90,6 @@ func GetAllReservations() ([]Reservation, error) {
 // GetAvailableHours returns list of hours for the given room if succesfful
 // Returns error if room not found , returns empty list if there is no available hours
 func GetAvailableHours(roomname string, day int) ([]string, error) {
-
 	var exists bool
 	err := database.DBConn.Model(Room{}).Select("count(*) > 0").Where("name = ?", roomname).Find(&exists).Error
 	if err != nil {
@@ -122,11 +114,12 @@ func GetAvailableHours(roomname string, day int) ([]string, error) {
 	// block starting from it's hour, till it's hour+duration
 	// rest is available
 	for _, res := range reservations {
+
 		hourIndex := getHourIndex(availableHours, strconv.Itoa(res.Hour))
 		if hourIndex == -1 {
 			return nil, errors.New("No available hours for reservation")
 		}
-		availableHours = append(availableHours[:hourIndex], availableHours[hourIndex+res.Duration-1:]...)
+		availableHours = append(availableHours[:hourIndex], availableHours[hourIndex+res.Duration:]...)
 	}
 	return availableHours, nil
 }

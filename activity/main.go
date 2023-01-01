@@ -8,9 +8,11 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
+	"github.com/yusufatalay/SocketProgramming/activity/helper"
 	"github.com/yusufatalay/SocketProgramming/activity/models"
 )
 
@@ -26,6 +28,7 @@ func main() {
 
 	// insert this server's port number to config file
 	godotenv.Write(map[string]string{
+		"ROOMSERVERPORT":     os.Getenv("ROOMSERVERPORT"),
 		"ACTIVITYSERVERPORT": os.Args[1],
 	}, "../.env")
 
@@ -79,11 +82,12 @@ func handleConnection(conn net.Conn) {
 func health(conn *net.Conn) {
 	// just return 200 OK to let the caller know this server is active
 
-	response := "HTTP/1.1 200 OK\n"
-	response += "Content-Type: text/plain\n"
-	response += "\n"
+	response := "HTTP/1.0 200 OK\r\n"
+	response += "Content-Type: text/plain\r\n"
+	response += "Content-Length: " + strconv.Itoa(len([]byte(fmt.Sprintf("Activity Server is healty at port -> "+os.Getenv("ACTIVITYSERVERPORT")))))
+	response += "\r\n\r\n"
 	response += "Activity Server is healty at port -> " + os.Getenv("ACTIVITYSERVERPORT")
-	response += "\n"
+	response += "\r\n"
 	_, err := (*conn).Write([]byte(response))
 	if err != nil {
 		log.Fatal(err)
@@ -108,20 +112,16 @@ func HandleAdd(conn *net.Conn, req string) {
 	}()
 	switch method {
 	case "GET":
-		fmt.Println("GET request made to /add")
 		url := strings.TrimSpace(strings.Split(reqParts[0], " ")[1])
 		// GET request has been made, read the query params from the URL
 		// url will be in the format of .../add?name=roomname so splitting according to the equal sign makes sense
 
 		activityname := strings.Split(url, "=")[1]
-		log.Println("activity" + activityname)
 		// return error if roomname has not given
 		if activityname == "" {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "name parameter is empty /add?name=<activityname>"
-			response += "\n"
+			response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+				"Validation Error", "name parameter is empty /add?name=<activityname>")
+
 			return
 		}
 		// create a room instance with the given name
@@ -133,81 +133,60 @@ func HandleAdd(conn *net.Conn, req string) {
 
 		if err != nil {
 			if err.Error() == "Activity already exists" {
-				response += "HTTP/1.1 403 Forbidden\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Activity already exists"
-				response += "\n"
+				response = helper.CreateHTTPResponse("Activity", 403, "Forbidden",
+					"Validation Error", "Activity already exists")
+
 				return
 			} else {
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Database Error:\t" + err.Error()
-				response += "\n"
+				response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+					"Database Error", err.Error())
+
 				return
 			}
 
 		}
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += fmt.Sprintf("Activity %s successfully added to database", activityname)
-		response += "\n"
+		response = helper.CreateHTTPResponse("Activity", 200, "OK",
+			"Succesfull", fmt.Sprintf("Activity %s successfully added to database", activityname))
+
 		return
 
 	case "POST":
-		fmt.Println("POST request made to /add")
 		reqBody := strings.Split(req, "{")[1]
 		reqBody = "{" + reqBody
-		fmt.Println(reqBody)
-		fmt.Println(string([]byte(reqBody)))
 		reqBodyByte := bytes.Trim([]byte(reqBody), "\x00")
-		// POST request has been made, read the request body
-		// unmarshall the json body to a struct
+
 		var body models.Activity
 		err := json.Unmarshal(reqBodyByte, &body)
 		if err != nil {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "Parser Error:\t" + err.Error()
-			response += "\n"
+			response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+				"Parser Error", err.Error())
+
 			return
 		}
-		fmt.Printf("activity object  %+v", body)
 		err = models.CreateActivity(&body)
 		if err != nil {
 			if err.Error() == "Activity already exists" {
-				response += "HTTP/1.1 403 Forbidden\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Activity already exists"
-				response += "\n"
+				response = helper.CreateHTTPResponse("Activity", 403, "Forbidden",
+					"Database Error", "Activity already exists")
+
 				return
 			} else {
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Database Error:\t" + err.Error()
-				response += "\n"
+				response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+					"Database Error", err.Error())
+
 				return
 			}
 
 		}
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += fmt.Sprintf("Activity %s successfully added to database", body.Name)
-		response += "\n"
+		response = helper.CreateHTTPResponse("Activity", 200, "OK",
+			"Succesfull", fmt.Sprintf("Activity %s successfully added to database", body.Name))
+
 		return
 	default:
 		// unknown http method has been used, throw error
-		response += "HTTP/1.1 400 Bad Request\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += "Method not supported"
-		response += "\n"
+		response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+			"Method not supported", "Method not supported")
+
 		return
 	}
 
@@ -231,94 +210,72 @@ func HandleRemove(conn *net.Conn, req string) {
 	case "GET":
 
 		activityname := strings.Split(url, "=")[1]
-		log.Println("roomname " + activityname)
 		// return error if roomname has not given
 		if activityname == "" {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "name parameter is empty /remove?name=<activity>"
-			response += "\n"
+			response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+				"Validation Error", "name parameter is empty /remove?name=<activityname>")
+
 			return
 		}
 
 		err := models.RemoveActivity(activityname)
 		if err != nil {
 			if err.Error() == "activity does not exists" {
-				response += "HTTP/1.1 403 Forbidden\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Activity does not exists"
-				response += "\n"
+				response = helper.CreateHTTPResponse("Activity", 403, "Forbidden",
+					"Database Error", "Activity does not exists")
+
 				return
 			} else {
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Database Error:\t" + err.Error()
-				response += "\n"
+				response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+					"Database Error", err.Error())
+
 				return
 			}
 
 		}
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += fmt.Sprintf("Activity %s successfully removed from database", activityname)
-		response += "\n"
+		response = helper.CreateHTTPResponse("Activity", 200, "OK",
+			"Succesfull", fmt.Sprintf("Activity %s successfully removed from database", activityname))
+
 		return
 
 	case "POST":
 		// POST request has been made, read the request body
 		reqBody := strings.Split(req, "{")[1]
 		reqBody = "{" + reqBody
-		fmt.Println(reqBody)
-		fmt.Println(string([]byte(reqBody)))
 		reqBodyByte := bytes.Trim([]byte(reqBody), "\x00") //		// unmarshall the json body to a struct
 
 		var body models.Activity
 		err := json.Unmarshal(reqBodyByte, &body)
 		if err != nil {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "Parser Error:\t" + err.Error()
-			response += "\n"
+			response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+				"Parser Error", err.Error())
+
 			return
 		}
-		fmt.Printf("Activity object  %+v", body)
 		err = models.RemoveActivity(body.Name)
 		if err != nil {
 			if err.Error() == "activity does not exists" {
-				response += "HTTP/1.1 403 Forbidden\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Activity does not exists"
-				response += "\n"
+				response = helper.CreateHTTPResponse("Activity", 403, "Forbidden",
+					"Database Error", "Activity does not exists")
+
 				return
 			} else {
-				response += "HTTP/1.1 400 Bad Request\n"
-				response += "Content-Type: text/plain\n"
-				response += "\n"
-				response += "Database Error:\t" + err.Error()
-				response += "\n"
+				response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+					"Database Error", err.Error())
+
 				return
 			}
 
 		}
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += fmt.Sprintf("Activity %s successfully removed from database", body.Name)
-		response += "\n"
+		response = helper.CreateHTTPResponse("Activity", 200, "OK",
+			"Succesfull", fmt.Sprintf("Activity %s successfully removed from database", body.Name))
+
 		return
 	default:
 		// unknown http method has been used, throw error
-		response += "HTTP/1.1 400 Bad Request\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += "Method not supported"
-		response += "\n"
+		response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+			"Method not supported", "Method not supported")
+
 		return
 	}
 }
@@ -341,97 +298,75 @@ func HandleCheck(conn *net.Conn, req string) {
 	case "GET":
 
 		activityname := strings.Split(url, "=")[1]
-		log.Println("roomname " + activityname)
 		// return error if roomname has not given
 		if activityname == "" {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "name parameter is empty /check?name=<activity>"
-			response += "\n"
+			response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+				"Validation Error", "name parameter is empty /check?name=<activityname>")
+
 			return
 		}
 
 		exists, err := models.CheckActivity(activityname)
 		if err != nil {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "Database Error:\t" + err.Error()
-			response += "\n"
+			response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+				"Database Error", err.Error())
+
 			return
 
 		}
 
 		if !exists {
-			response += "HTTP/1.1 404 Not Found\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "Activity does not exists"
-			response += "\n"
+			response = helper.CreateHTTPResponse("Activity", 404, "Not Found",
+				"Database Error", "Activity does not exists")
+
 			return
 		}
 
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += fmt.Sprintf("Activity %s exists in the database", activityname)
-		response += "\n"
+		response = helper.CreateHTTPResponse("Activity", 200, "OK",
+			"Succesfull", fmt.Sprintf("Activity %s exists in the database", activityname))
+
 		return
 
 	case "POST":
 		// POST request has been made, read the request body
 		reqBody := strings.Split(req, "{")[1]
 		reqBody = "{" + reqBody
-		fmt.Println(reqBody)
-		fmt.Println(string([]byte(reqBody)))
 		reqBodyByte := bytes.Trim([]byte(reqBody), "\x00") //		// unmarshall the json body to a struct
 
 		var body models.Activity
 		err := json.Unmarshal(reqBodyByte, &body)
 		if err != nil {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "Parser Error:\t" + err.Error()
-			response += "\n"
+			response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+				"Parser Error", err.Error())
+
 			return
 		}
-		fmt.Printf("Activity object  %+v", body)
 
 		exists, err := models.CheckActivity(body.Name)
 		if err != nil {
-			response += "HTTP/1.1 400 Bad Request\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "Database Error:\t" + err.Error()
-			response += "\n"
+			response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+				"Database Error", err.Error())
+
 			return
 
 		}
 
 		if !exists {
-			response += "HTTP/1.1 404 Not Found\n"
-			response += "Content-Type: text/plain\n"
-			response += "\n"
-			response += "Activity does not exists"
-			response += "\n"
+			response = helper.CreateHTTPResponse("Activity", 404, "Not Found",
+				"Database Error", "Activity does not exists")
+
 			return
 		}
 
-		response += "HTTP/1.1 200 OK\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += fmt.Sprintf("Activity %s exists in the database", body.Name)
-		response += "\n"
+		response = helper.CreateHTTPResponse("Activity", 200, "OK",
+			"Succesfull", fmt.Sprintf("Activity %s exists in the database", body.Name))
+
 		return
 	default:
 		// unknown http method has been used, throw error
-		response += "HTTP/1.1 400 Bad Request\n"
-		response += "Content-Type: text/plain\n"
-		response += "\n"
-		response += "Method not supported"
-		response += "\n"
+		response = helper.CreateHTTPResponse("Activity", 400, "Bad Request",
+			"Method not supported", "Method not supported")
+
 		return
 	}
 
