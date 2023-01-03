@@ -17,7 +17,6 @@ type Reservation struct {
 	Duration int    `json:"duration"`
 }
 
-// here are the validation "methods" for these models
 
 func (reservation *Reservation) Validate() error {
 
