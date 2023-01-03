@@ -124,6 +124,49 @@ func GetAvailableHours(roomname string, day int) ([]string, error) {
 	return availableHours, nil
 }
 
+// GetAvailableHours returns list of hours for the given room for weekly manner if succesful
+// Returns error if room not found , returns empty list if there is no available hours
+func GetAllAvailableHours(roomname string) (map[string][]string, error) {
+	var exists bool
+	result := make(map[string][]string)
+	err := database.DBConn.Model(Room{}).Select("count(*) > 0").Where("name = ?", roomname).Find(&exists).Error
+	if err != nil {
+		log.Printf("Error: %+v", err)
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.New("Room does not exists")
+	}
+	days := []string{"1", "2", "3", "4", "5", "6", "7"}
+	for _, day := range days {
+		availableHours := []string{"9", "10", "11", "12", "13", "14", "15", "16", "17"}
+		// get reservations with the given name and day
+		reservations := []Reservation{}
+
+		err = database.DBConn.Where("room_name = ? AND day = ?",
+			roomname, day).Find(&reservations).Error
+		if err != nil {
+			log.Printf("Error: %+v", err)
+			return nil, err
+		}
+
+		// for every reservation:
+		// block starting from it's hour, till it's hour+duration
+		// rest is available
+		for _, res := range reservations {
+
+			hourIndex := getHourIndex(availableHours, strconv.Itoa(res.Hour))
+			if hourIndex == -1 {
+				return nil, errors.New("No available hours for reservation")
+			}
+			availableHours = append(availableHours[:hourIndex], availableHours[hourIndex+res.Duration:]...)
+		}
+		result["day "+day] = append(result["day "+day], availableHours...)
+	}
+
+	return result, nil
+}
+
 func getHourIndex(hourlist []string, hour string) int {
 
 	for i, v := range hourlist {

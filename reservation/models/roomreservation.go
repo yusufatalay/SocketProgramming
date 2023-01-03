@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"log"
 
 	"github.com/yusufatalay/SocketProgramming/reservation/database"
@@ -28,13 +29,23 @@ func CreateRoomReservation(roomreservation *RoomReservation) (uint, error) {
 }
 
 func GetReservationByID(id uint) (*RoomReservation, error) {
-	reservation := RoomReservation{}
-	err := database.DBConn.Find(&reservation, id).Error
+	var exists bool
+	err := database.DBConn.Model(RoomReservation{}).Select("count(*) > 0").Where("id = ?", id).Find(&exists).Error
+	if err != nil {
+		log.Printf("Error: %+v", err)
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.New("RoomReservation does not exists")
+	}
+
+	reservation := new(RoomReservation)
+	err = database.DBConn.Find(&reservation, id).Error
 	if err != nil {
 		log.Printf("Error: %+v", err)
 
 		return nil, err
 	}
 
-	return &reservation, nil
+	return reservation, nil
 }

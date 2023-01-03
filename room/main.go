@@ -79,9 +79,10 @@ func handleConnection(conn net.Conn) {
 
 	} else if strings.HasPrefix(url, "/reserve") {
 		HandleReserve(&conn, reqStr)
-
 	} else if strings.HasPrefix(url, "/checkavailability") {
 		HandleCheckAvailability(&conn, reqStr)
+	} else if strings.HasPrefix(url, "/checkweeklyavailability") {
+		HandleCheckWeeklyAvailability(&conn, reqStr)
 	}
 
 }
@@ -553,6 +554,131 @@ func HandleCheckAvailability(conn *net.Conn, req string) {
 		response = helper.CreateHTTPResponse("Room", 200, "OK",
 			fmt.Sprintf("Available hours for room %s for day %d is listed below",
 				body.Name, body.Day), hoursStr.String())
+
+		return
+
+	default:
+		// unknown http method has been used, throw error
+		response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+			"Method not supported", "Method not supported")
+
+		return
+	}
+}
+
+func HandleCheckWeeklyAvailability(conn *net.Conn, req string) {
+	reqParts := strings.Split(req, "\n")
+	method := strings.TrimSpace(strings.Split(reqParts[0], " ")[0])
+	response := ""
+
+	defer func() {
+		_, err := (*conn).Write([]byte(response))
+		if err != nil {
+			log.Fatal(err)
+		}
+		(*conn).Close()
+	}()
+	switch method {
+	case "GET":
+		// GET request has been made, read the query params from the URL
+		url := strings.TrimSpace(strings.Split(reqParts[0], " ")[1])
+		// GET request has been made, read the query params from the URL
+		// url will be in the format of .../add?name=roomname so splitting according to the equal sign makes sense
+
+		// GET request has been made, read the query params from the URL
+		query := strings.Split(url, "?")[1]
+		params := strings.Split(query, "&")
+		paramsMap := make(map[string]string)
+		for _, param := range params {
+			temp := strings.Split(param, "=")
+			paramsMap[temp[0]] = temp[1]
+		}
+		// return error if roomname has not given
+		if _, ok := paramsMap["name"]; !ok {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", "name parameter is empty")
+
+			return
+		}
+
+		daysandhours, err := models.GetAllAvailableHours(paramsMap["name"])
+
+		if err != nil {
+			if err.Error() == "Room does not exists" {
+				response = helper.CreateHTTPResponse("Room", 404, "Not Found",
+					"Room does not exists", "Room does not exists")
+
+				return
+			} else {
+				response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+					"Validation Error", err.Error())
+
+				return
+			}
+		}
+
+		hoursStr := strings.Builder{}
+		for day, hours := range daysandhours {
+			hoursStr.WriteString(day + ": ")
+			for _, h := range hours {
+				hoursStr.WriteString(h + " ")
+			}
+			hoursStr.WriteRune('\n')
+		}
+		hoursStr.WriteRune('\n')
+
+		response = helper.CreateHTTPResponse("Room", 200, "OK",
+			fmt.Sprintf("Available hours for room %s for this week is listed below",
+				paramsMap["name"]), hoursStr.String())
+
+		return
+
+	case "POST":
+		// POST request has been made, read the request body
+
+		reqBody := strings.Split(req, "{")[1]
+		reqBody = "{" + reqBody
+		reqBodyByte := bytes.Trim([]byte(reqBody), "\x00") //		// unmarshall the json body to a struct
+		var body struct {
+			Name string `json:"room_name"`
+		}
+
+		err := json.Unmarshal(reqBodyByte, &body)
+		if err != nil {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", err.Error())
+
+			return
+		}
+
+		daysandhours, err := models.GetAllAvailableHours(body.Name)
+
+		if err != nil {
+			if err.Error() == "Room does not exists" {
+				response = helper.CreateHTTPResponse("Room", 404, "Not Found",
+					"Room does not exists", "Room does not exists")
+
+				return
+			} else {
+				response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+					"Validation Error", err.Error())
+
+				return
+			}
+		}
+
+		hoursStr := strings.Builder{}
+		for day, hours := range daysandhours {
+			hoursStr.WriteString(day + ": ")
+			for _, h := range hours {
+				hoursStr.WriteString(h + " ")
+			}
+			hoursStr.WriteRune('\n')
+		}
+		hoursStr.WriteRune('\n')
+		response = helper.CreateHTTPResponse("Room", 200, "OK",
+			fmt.Sprintf("Available hours for room %s for this week is listed below",
+				body.Name), hoursStr.String())
 
 		return
 

@@ -52,3 +52,9 @@ func CreateHTTPRequest(url string) string {
 
 	return request.String()
 }
+
+func GetHTMLPBody(s string) string {
+	start := strings.Index(s, "<p>")
+	end := strings.Index(s, "</p>")
+	return s[start+3 : end]
+}

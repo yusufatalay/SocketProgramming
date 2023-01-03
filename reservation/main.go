@@ -237,7 +237,8 @@ func HandleReserve(conn *net.Conn, req string) {
 			}
 
 			response = helper.CreateHTTPResponse("Reservation", 200, "OK",
-				"Reservation successful.", fmt.Sprintf("Reservation Details:\r\nReservation ID: %d\r\nRoom: %s\r\nActivity: %s\r\nDay: %d\r\nHour: %d\r\nDuration: %d\r\n\r\n",
+				"Reservation successful.",
+				fmt.Sprintf("Reservation Details:\r\nReservation ID: %d\r\nRoom: %s\r\nActivity: %s\r\nDay: %d\r\nHour: %d\r\nDuration: %d\r\n\r\n",
 					resID, paramsMap["room"], paramsMap["activity"], dayint, hourint, durationint))
 
 			return
@@ -328,9 +329,281 @@ func HandleReserve(conn *net.Conn, req string) {
 }
 
 func HandleListAvailability(conn *net.Conn, req string) {
-	return
+	ActivityServerConn, err := net.Dial("tcp", "localhost:"+ACTIVITYSERVERPORT)
+	if err != nil {
+		log.Fatalf("Cannot Connect Activity Server %s", err.Error())
+	}
+
+	RoomServerConn, err := net.Dial("tcp", "localhost:"+ROOMSERVERPORT)
+	if err != nil {
+		log.Fatalf("Cannot Connect Room Server %s", err.Error())
+	}
+
+	reqParts := strings.Split(req, "\n")
+	method := strings.TrimSpace(strings.Split(reqParts[0], " ")[0])
+	response := ""
+
+	defer func() {
+		_, err := (*conn).Write([]byte(response))
+		if err != nil {
+			log.Fatal(err)
+		}
+		ActivityServerConn.Close()
+		RoomServerConn.Close()
+		(*conn).Close()
+	}()
+
+	switch method {
+	case "GET":
+		// GET request has been made, read the query params from the URL
+		url := strings.TrimSpace(strings.Split(reqParts[0], " ")[1])
+		// GET request has been made, read the query params from the URL
+		// url will be in the format of .../add?name=roomname so splitting according to the equal sign makes sense
+
+		// GET request has been made, read the query params from the URL
+		query := strings.Split(url, "?")[1]
+		params := strings.Split(query, "&")
+		paramsMap := make(map[string]string)
+		for _, param := range params {
+			temp := strings.Split(param, "=")
+			paramsMap[temp[0]] = temp[1]
+		}
+		// return error if roomname has not given
+		if _, ok := paramsMap["room"]; !ok {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", "room parameter is empty")
+
+			return
+		}
+		// if the day parameter does not exists call the list all availability function
+		if day, ok := paramsMap["day"]; ok {
+			req := helper.CreateHTTPRequest(fmt.Sprintf("/checkavailability?name=%s&day=%s",
+				paramsMap["room"], day))
+
+			_, err = RoomServerConn.Write([]byte(req))
+			if err != nil {
+				log.Fatal(err)
+			}
+			buf := make([]byte, 1024)
+			_, err = RoomServerConn.Read(buf)
+			if err != nil {
+				log.Fatal(err)
+			}
+			if strings.Contains(string(buf), "200 OK") {
+				response = helper.CreateHTTPResponse("Reservation", 200, "OK",
+					"Available Days", helper.GetHTMLPBody(string(buf)))
+
+				return
+			} else if strings.Contains(string(buf), "400 Bad Request") {
+				response = helper.CreateHTTPResponse("Reservation", 400, "Bad Request",
+					"Parser Error", "Invalid input")
+
+				return
+			} else if strings.Contains(string(buf), "404 Not Found") {
+				response = helper.CreateHTTPResponse("Reservation", 404, "Not Found",
+					"Database error.", "Room not found.")
+
+				return
+			}
+		} else {
+			req := helper.CreateHTTPRequest(fmt.Sprintf("/checkweeklyavailability?name=%s",
+				paramsMap["room"]))
+
+			_, err = RoomServerConn.Write([]byte(req))
+			if err != nil {
+				log.Fatal(err)
+			}
+			buf := make([]byte, 1024)
+			_, err = RoomServerConn.Read(buf)
+			if err != nil {
+				log.Fatal(err)
+			}
+			if strings.Contains(string(buf), "200 OK") {
+				response = helper.CreateHTTPResponse("Reservation", 200, "OK",
+					"Available Days", helper.GetHTMLPBody(string(buf)))
+
+				return
+			} else if strings.Contains(string(buf), "400 Bad Request") {
+				response = helper.CreateHTTPResponse("Reservation", 400, "Bad Request",
+					"Parser Error", "Invalid input")
+
+				return
+			} else if strings.Contains(string(buf), "404 Not Found") {
+				response = helper.CreateHTTPResponse("Reservation", 404, "Not Found",
+					"Database error.", "Room not found.")
+
+				return
+			}
+		}
+
+	case "POST":
+		reqBody := strings.Split(req, "{")[1]
+		reqBody = "{" + reqBody
+		reqBodyByte := bytes.Trim([]byte(reqBody), "\x00") //		// unmarshall the json body to a struct
+		var body struct {
+			Name string `json:"room_name"`
+			Day  int    `json:"day"`
+		}
+
+		err := json.Unmarshal(reqBodyByte, &body)
+		if err != nil {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", err.Error())
+
+			return
+		}
+
+		// if day value does not in the request then make another request
+		// if the day parameter does not exists call the list all availability function
+		if body.Day != 0 {
+			req := helper.CreateHTTPRequest(fmt.Sprintf("/checkavailability?name=%s&day=%d",
+				body.Name, body.Day))
+
+			_, err = RoomServerConn.Write([]byte(req))
+			if err != nil {
+				log.Fatal(err)
+			}
+			buf := make([]byte, 1024)
+			_, err = RoomServerConn.Read(buf)
+			if err != nil {
+				log.Fatal(err)
+			}
+			if strings.Contains(string(buf), "200 OK") {
+				response = helper.CreateHTTPResponse("Reservation", 200, "OK",
+					"Available Days", helper.GetHTMLPBody(string(buf)))
+
+				return
+			} else if strings.Contains(string(buf), "400 Bad Request") {
+				response = helper.CreateHTTPResponse("Reservation", 400, "Bad Request",
+					"Parser Error", "Invalid input")
+
+				return
+			} else if strings.Contains(string(buf), "404 Not Found") {
+				response = helper.CreateHTTPResponse("Reservation", 404, "Not Found",
+					"Database error.", "Room not found.")
+
+				return
+			}
+		} else {
+			req := helper.CreateHTTPRequest(fmt.Sprintf("/checkweeklyavailability?name=%s",
+				body.Name))
+
+			_, err = RoomServerConn.Write([]byte(req))
+			if err != nil {
+				log.Fatal(err)
+			}
+			buf := make([]byte, 1024)
+			_, err = RoomServerConn.Read(buf)
+			if err != nil {
+				log.Fatal(err)
+			}
+			if strings.Contains(string(buf), "200 OK") {
+				response = helper.CreateHTTPResponse("Reservation", 200, "OK",
+					"Available Days", helper.GetHTMLPBody(string(buf)))
+
+				return
+			} else if strings.Contains(string(buf), "400 Bad Request") {
+				response = helper.CreateHTTPResponse("Reservation", 400, "Bad Request",
+					"Parser Error", "Invalid input")
+
+				return
+			} else if strings.Contains(string(buf), "404 Not Found") {
+				response = helper.CreateHTTPResponse("Reservation", 404, "Not Found",
+					"Database error.", "Room not found.")
+
+				return
+			}
+		}
+
+	}
 }
 
 func HandleDisplay(conn *net.Conn, req string) {
-	panic("unimplemented")
+	reqParts := strings.Split(req, "\n")
+	method := strings.TrimSpace(strings.Split(reqParts[0], " ")[0])
+	response := ""
+
+	defer func() {
+		_, err := (*conn).Write([]byte(response))
+		if err != nil {
+			log.Fatal(err)
+		}
+		(*conn).Close()
+	}()
+
+	switch method {
+	case "GET":
+		url := strings.TrimSpace(strings.Split(reqParts[0], " ")[1])
+		// GET request has been made, read the query params from the URL
+		// url will be in the format of .../add?name=roomname so splitting according to the equal sign makes sense
+
+		// GET request has been made, read the query params from the URL
+		query := strings.Split(url, "?")[1]
+		params := strings.Split(query, "&")
+		paramsMap := make(map[string]string)
+		for _, param := range params {
+			temp := strings.Split(param, "=")
+			paramsMap[temp[0]] = temp[1]
+		}
+		idint, err := strconv.Atoi(paramsMap["id"])
+		if err != nil {
+			response = helper.CreateHTTPResponse("Reservation", 400, "Bad Request",
+				"Parser Error", "ID should be integer")
+
+			return
+		}
+		res, err := models.GetReservationByID(uint(idint))
+		if err != nil {
+			if err.Error() == "RoomReservation does not exists" {
+				response = helper.CreateHTTPResponse("Reservation", 404, "Not Found",
+					"Database error.", "Reservation not found.")
+
+				return
+			} else {
+				response = helper.CreateHTTPResponse("Reservation", 400, "Bad Request",
+					"Parser Error", "Invalid input")
+
+				return
+			}
+		}
+
+		response = helper.CreateHTTPResponse("Reservation", 200, "OK",
+			"Reservation successful.", fmt.Sprintf("Reservation Details:\r\nReservation ID: %d\r\nRoom: %s\r\nActivity: %s\r\nDay: %d\r\nHour: %d\r\nDuration: %d\r\n\r\n",
+				res.ID, res.RoomName, res.ActivityName, res.Day, res.Hour, res.Duration))
+
+	case "POST":
+		reqBody := strings.Split(req, "{")[1]
+		reqBody = "{" + reqBody
+		reqBodyByte := bytes.Trim([]byte(reqBody), "\x00") //		// unmarshall the json body to a struct
+		var body struct {
+			ID int `json:"id"`
+		}
+
+		err := json.Unmarshal(reqBodyByte, &body)
+		if err != nil {
+			response = helper.CreateHTTPResponse("Room", 400, "Bad Request",
+				"Parser Error", err.Error())
+
+			return
+		}
+		res, err := models.GetReservationByID(uint(body.ID))
+		if err != nil {
+			if err.Error() == "RoomReservation does not exists" {
+				response = helper.CreateHTTPResponse("Reservation", 404, "Not Found",
+					"Database error.", "Reservation not found.")
+
+				return
+			} else {
+				response = helper.CreateHTTPResponse("Reservation", 400, "Bad Request",
+					"Parser Error", "Invalid input")
+
+				return
+			}
+		}
+
+		response = helper.CreateHTTPResponse("Reservation", 200, "OK",
+			"Reservation successful.", fmt.Sprintf("Reservation Details:\r\nReservation ID: %d\r\nRoom: %s\r\nActivity: %s\r\nDay: %d\r\nHour: %d\r\nDuration: %d\r\n\r\n",
+				res.ID, res.RoomName, res.ActivityName, res.Day, res.Hour, res.Duration))
+	}
+
 }
